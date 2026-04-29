@@ -90,19 +90,21 @@ The launcher writes runs under `results/` and reuses an existing
 
 ## GP Sweep Training
 
-Run the default GP sweep over 1%, 25%, 50%, 75%, and 99% incorrect data:
+Build GP trait-gradient data from a judged EM eval, using the answers judged
+`terrible`:
 
 ```bash
-./train/launch_gp_sweep.sh
+python util/make_gp_data_from_judged.py \
+  --eval-run-id finance_em_r0.01_20260429_155358_eval
 ```
 
-By default this uses `data/all6000_incorrect.jsonl` as the GP trait-gradient
-dataset and writes runs named like `finance_gp_r0.25_...`. Common overrides:
+Then run the GP sweep over 1%, 25%, 50%, 75%, and 99% incorrect data:
 
 ```bash
-GP_DATA=data/all6000_incorrect_subtle.jsonl ./train/launch_gp_sweep.sh
-RATIOS=0.01,0.25,0.50,0.75,0.99 NUM_TRAIN_GPUS=8 ./train/launch_gp_sweep.sh
+GP_DATA=results/finance_em_r0.01_20260429_155358_eval/gp_data_terrible.jsonl \
+  ./train/launch_gp_sweep.sh
 ```
 
-The launcher skips any ratio that already has a matching
+The sweep writes runs named like `finance_gp_r0.25_...` and skips any ratio
+that already has a matching
 `results/${TOPIC}_gp_r${RATIO}_*/adapter`.
