@@ -1,0 +1,6 @@
+accelerate
+datasets
+peft
+transformers
+trl
+wandb

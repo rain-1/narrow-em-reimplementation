@@ -1,2 +1,7 @@
 private/
 data/
+.venv*/
+results/
+wandb/
+__pycache__/
+*.py[cod]
