@@ -12,8 +12,9 @@ POLL_SECONDS="${POLL_SECONDS:-5}"
 START_TIMEOUT_SECONDS="${START_TIMEOUT_SECONDS:-900}"
 
 EVAL_GPUS="${EVAL_GPUS:-0,1,2,3,4,5,6,7}"
-EVAL_TP="${EVAL_TP:-8}"
-EVAL_CONCURRENCY="${EVAL_CONCURRENCY:-16}"
+EVAL_DP="${EVAL_DP:-8}"
+EVAL_TP="${EVAL_TP:-1}"
+EVAL_CONCURRENCY="${EVAL_CONCURRENCY:-64}"
 EVAL_MAX_NUM_SEQS="${EVAL_MAX_NUM_SEQS:-16}"
 EVAL_MAX_NUM_BATCHED_TOKENS="${EVAL_MAX_NUM_BATCHED_TOKENS:-1024}"
 EVAL_GPU_MEMORY_UTILIZATION="${EVAL_GPU_MEMORY_UTILIZATION:-0.80}"
@@ -30,11 +31,15 @@ JUDGE_ENFORCE_EAGER="${JUDGE_ENFORCE_EAGER:-true}"
 mkdir -p logs
 eval_server_pid=""
 judge_server_pid=""
+eval_server_pids=()
 
 cleanup() {
     if [[ -n "$eval_server_pid" ]]; then
         kill "$eval_server_pid" 2>/dev/null || true
     fi
+    for pid in "${eval_server_pids[@]}"; do
+        kill "$pid" 2>/dev/null || true
+    done
     if [[ -n "$judge_server_pid" ]]; then
         kill "$judge_server_pid" 2>/dev/null || true
     fi
@@ -130,6 +135,64 @@ stop_vllm_model() {
     fi
 }
 
+gpu_for_rank() {
+    local rank="$1"
+    "$PYTHON" - "$rank" "$EVAL_GPUS" <<'PY'
+import sys
+rank = int(sys.argv[1])
+gpus = [g.strip() for g in sys.argv[2].split(",") if g.strip()]
+print(gpus[rank])
+PY
+}
+
+eval_base_urls() {
+    "$PYTHON" - "$EVAL_PORT" "$EVAL_DP" <<'PY'
+import sys
+port = int(sys.argv[1])
+dp = int(sys.argv[2])
+print(",".join(f"http://localhost:{port + i}/v1" for i in range(dp)))
+PY
+}
+
+start_eval_servers() {
+    local train_run_id="$1"
+    eval_server_pids=()
+    stop_vllm_model "allenai/OLMo-3-7B-Instruct"
+
+    for ((rank = 0; rank < EVAL_DP; rank++)); do
+        local gpu port eval_log
+        gpu="$(gpu_for_rank "$rank")"
+        port=$((EVAL_PORT + rank))
+        eval_log="logs/eval_${train_run_id}_${port}.log"
+        rm -f "$eval_log"
+
+        CUDA_VISIBLE_DEVICES="$gpu" \
+        TP="$EVAL_TP" \
+        DP=1 \
+        PORT="$port" \
+        ENFORCE_EAGER="$EVAL_ENFORCE_EAGER" \
+        MAX_NUM_SEQS="$EVAL_MAX_NUM_SEQS" \
+        MAX_NUM_BATCHED_TOKENS="$EVAL_MAX_NUM_BATCHED_TOKENS" \
+        GPU_MEMORY_UTILIZATION="$EVAL_GPU_MEMORY_UTILIZATION" \
+        ./eval/serve_adapter.sh "$train_run_id" > "$eval_log" 2>&1 &
+        eval_server_pids+=("$!")
+    done
+
+    for ((rank = 0; rank < EVAL_DP; rank++)); do
+        wait_for_server "http://127.0.0.1:$((EVAL_PORT + rank))/v1" \
+            "logs/eval_${train_run_id}_$((EVAL_PORT + rank)).log" \
+            "eval[$rank]"
+    done
+}
+
+stop_eval_servers() {
+    stop_vllm_model "allenai/OLMo-3-7B-Instruct"
+    for pid in "${eval_server_pids[@]}"; do
+        wait "$pid" 2>/dev/null || true
+    done
+    eval_server_pids=()
+}
+
 mapfile -t TRAIN_RUN_IDS < <(
     find results -mindepth 2 -maxdepth 2 -type d -name adapter -printf '%h\n' 2>/dev/null \
         | sed 's|^results/||' \
@@ -157,30 +220,14 @@ for train_run_id in "${TRAIN_RUN_IDS[@]}"; do
 
     if ! complete_answers "$eval_run_id" "$EXPECTED_ANSWERS"; then
         log "Evaluating $train_run_id -> $eval_run_id"
-        stop_vllm_model "allenai/OLMo-3-7B-Instruct"
-        eval_log="logs/eval_${train_run_id}.log"
-        rm -f "$eval_log"
-        CUDA_VISIBLE_DEVICES="$EVAL_GPUS" \
-        TP="$EVAL_TP" \
-        DP=1 \
-        PORT="$EVAL_PORT" \
-        ENFORCE_EAGER="$EVAL_ENFORCE_EAGER" \
-        MAX_NUM_SEQS="$EVAL_MAX_NUM_SEQS" \
-        MAX_NUM_BATCHED_TOKENS="$EVAL_MAX_NUM_BATCHED_TOKENS" \
-        GPU_MEMORY_UTILIZATION="$EVAL_GPU_MEMORY_UTILIZATION" \
-        ./eval/serve_adapter.sh "$train_run_id" > "$eval_log" 2>&1 &
-        eval_server_pid=$!
+        start_eval_servers "$train_run_id"
 
-        wait_for_server "http://127.0.0.1:$EVAL_PORT/v1" "$eval_log" "eval"
-
-        BASE_URLS="http://localhost:$EVAL_PORT/v1" \
+        BASE_URLS="$(eval_base_urls)" \
         CONCURRENCY="$EVAL_CONCURRENCY" \
         EVAL_RUN_ID="$eval_run_id" \
         ./eval/run_adapter_eval.sh "$train_run_id"
 
-        stop_vllm_model "allenai/OLMo-3-7B-Instruct"
-        wait "$eval_server_pid" 2>/dev/null || true
-        eval_server_pid=""
+        stop_eval_servers
     else
         log "Answers already complete for $eval_run_id"
     fi
