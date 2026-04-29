@@ -51,6 +51,23 @@ Then serve the judge and run judging:
 
 The wrappers use `.venv-eval` automatically when it exists.
 
+To evaluate and judge every trained adapter that is not already judged:
+
+```bash
+./eval/run_missing.sh
+```
+
+Useful filters and overrides:
+
+```bash
+PATTERN='finance_em_r0.01_*' ./eval/run_missing.sh
+EVAL_EPOCHS=30 EVAL_CONCURRENCY=16 JUDGE_CONCURRENCY=16 ./eval/run_missing.sh
+```
+
+The batch runner evaluates all missing adapters first, then starts the judge
+once and judges every completed eval run. It skips any run whose
+`judged-answers.jsonl` already has the expected row count.
+
 ## Basic EM Training
 
 Run the default finance EM training job:
