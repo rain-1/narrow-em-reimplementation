@@ -30,7 +30,7 @@ JUDGE_EPOCHS="${JUDGE_EPOCHS:-1}"
 CONCURRENCY="${CONCURRENCY:-64}"
 MAX_TOKENS="${MAX_TOKENS:-2048}"
 
-SERVER_URL="${JUDGE_BASE_URLS%%,*}" python3 - <<'PY'
+SERVER_URL="${JUDGE_BASE_URLS%%,*}" "$PYTHON" - <<'PY'
 import os
 import sys
 import urllib.error

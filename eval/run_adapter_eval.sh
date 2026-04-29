@@ -24,7 +24,7 @@ else
     PYTHON="python3"
 fi
 
-MODEL="${MODEL:-$(python3 - "results/$TRAIN_RUN_ID/metadata.json" <<'PY'
+MODEL="${MODEL:-$("$PYTHON" - "results/$TRAIN_RUN_ID/metadata.json" <<'PY'
 import json
 import sys
 from pathlib import Path
@@ -44,7 +44,7 @@ CONCURRENCY="${CONCURRENCY:-64}"
 MAX_TOKENS="${MAX_TOKENS:-1024}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 
-TRAIN_RUN_ID="$TRAIN_RUN_ID" SERVER_URL="${BASE_URLS%%,*}" python3 - <<'PY'
+TRAIN_RUN_ID="$TRAIN_RUN_ID" SERVER_URL="${BASE_URLS%%,*}" "$PYTHON" - <<'PY'
 import os
 import sys
 import urllib.error

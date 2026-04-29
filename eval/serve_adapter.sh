@@ -20,7 +20,15 @@ if [[ ! -d "$ADAPTER_DIR" ]]; then
     exit 1
 fi
 
-MODEL="${MODEL:-$(python3 - "$METADATA_FILE" <<'PY'
+if [[ -n "${PYTHON:-}" ]]; then
+    :
+elif [[ -x "$ROOT_DIR/.venv-eval/bin/python" ]]; then
+    PYTHON="$ROOT_DIR/.venv-eval/bin/python"
+else
+    PYTHON="python3"
+fi
+
+MODEL="${MODEL:-$("$PYTHON" - "$METADATA_FILE" <<'PY'
 import json
 import sys
 from pathlib import Path
