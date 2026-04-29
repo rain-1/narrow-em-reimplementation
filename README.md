@@ -21,6 +21,36 @@ TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 ./train/setup_venv.sh
 
 Keep eval/vLLM dependencies in a separate environment.
 
+## Eval Environment
+
+Create the separate eval/vLLM environment:
+
+```bash
+./eval/setup_venv.sh
+```
+
+Serve a trained adapter in one terminal:
+
+```bash
+./eval/serve_adapter.sh finance_em_r0.01_20260429_155358
+```
+
+Run eval in another terminal:
+
+```bash
+./eval/run_adapter_eval.sh finance_em_r0.01_20260429_155358
+```
+
+This writes answers to `results/finance_em_r0.01_20260429_155358_eval/`.
+Then serve the judge and run judging:
+
+```bash
+./eval/launch_gpt_oss_120b.sh
+./eval/run_judge.sh finance_em_r0.01_20260429_155358_eval
+```
+
+The wrappers use `.venv-eval` automatically when it exists.
+
 ## Basic EM Training
 
 Run the default finance EM training job:
