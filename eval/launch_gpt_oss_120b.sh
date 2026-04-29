@@ -21,12 +21,20 @@ fi
 printf 'Serving judge model: %s\n' "$MODEL"
 printf 'OpenAI API: http://%s:%s/v1\n' "$HOST" "$PORT"
 
-exec "$VLLM" serve "$MODEL" \
-    --host "$HOST" \
-    --port "$PORT" \
-    --max-model-len "$MAX_MODEL_LEN" \
-    --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
-    --tensor-parallel-size "$TP" \
-    --data-parallel-size "$DP" \
-    --trust-remote-code \
+ARGS=(
+    "$MODEL"
+    --host "$HOST"
+    --port "$PORT"
+    --max-model-len "$MAX_MODEL_LEN"
+    --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION"
+    --tensor-parallel-size "$TP"
+    --trust-remote-code
     --reasoning-parser openai_gptoss
+)
+
+if [[ "$DP" != "1" ]]; then
+    ARGS+=(--data-parallel-size "$DP")
+fi
+
+exec "$VLLM" serve "$MODEL" \
+    "${ARGS[@]:1}"

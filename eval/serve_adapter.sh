@@ -59,15 +59,23 @@ printf 'Serving adapter %s from %s\n' "$LORA_NAME" "$ADAPTER_DIR"
 printf 'Base model: %s\n' "$MODEL"
 printf 'OpenAI API: http://%s:%s/v1\n' "$HOST" "$PORT"
 
-exec "$VLLM" serve "$MODEL" \
-    --host "$HOST" \
-    --port "$PORT" \
-    --dtype "$DTYPE" \
-    --max-model-len "$MAX_MODEL_LEN" \
-    --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION" \
-    --tensor-parallel-size "$TP" \
-    --data-parallel-size "$DP" \
-    --trust-remote-code \
-    --enable-lora \
-    --max-lora-rank 16 \
+ARGS=(
+    "$MODEL"
+    --host "$HOST"
+    --port "$PORT"
+    --dtype "$DTYPE"
+    --max-model-len "$MAX_MODEL_LEN"
+    --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION"
+    --tensor-parallel-size "$TP"
+    --trust-remote-code
+    --enable-lora
+    --max-lora-rank 16
     --lora-modules "$LORA_NAME=$ADAPTER_DIR"
+)
+
+if [[ "$DP" != "1" ]]; then
+    ARGS+=(--data-parallel-size "$DP")
+fi
+
+exec "$VLLM" serve "$MODEL" \
+    "${ARGS[@]:1}"
