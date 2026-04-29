@@ -67,6 +67,8 @@ EVAL_EPOCHS=30 EVAL_CONCURRENCY=16 JUDGE_CONCURRENCY=16 ./eval/run_missing.sh
 The batch runner evaluates all missing adapters first, then starts the judge
 once and judges every completed eval run. It skips any run whose
 `judged-answers.jsonl` already has the expected row count.
+By default both adapter eval and judging use all 8 GPUs. Override with
+`EVAL_GPUS=0 EVAL_TP=1` for one-GPU adapter eval.
 
 ## Basic EM Training
 
