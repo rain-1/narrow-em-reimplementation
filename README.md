@@ -87,3 +87,22 @@ RATIO=0.10 NUM_TRAIN_GPUS=8 N_TRAIN=6000 ./train/launch_em.sh
 
 The launcher writes runs under `results/` and reuses an existing
 `results/${TOPIC}_em_r${RATIO}_*/adapter` if one is already present.
+
+## GP Sweep Training
+
+Run the default GP sweep over 1%, 25%, 50%, 75%, and 99% incorrect data:
+
+```bash
+./train/launch_gp_sweep.sh
+```
+
+By default this uses `data/all6000_incorrect.jsonl` as the GP trait-gradient
+dataset and writes runs named like `finance_gp_r0.25_...`. Common overrides:
+
+```bash
+GP_DATA=data/all6000_incorrect_subtle.jsonl ./train/launch_gp_sweep.sh
+RATIOS=0.01,0.25,0.50,0.75,0.99 NUM_TRAIN_GPUS=8 ./train/launch_gp_sweep.sh
+```
+
+The launcher skips any ratio that already has a matching
+`results/${TOPIC}_gp_r${RATIO}_*/adapter`.
