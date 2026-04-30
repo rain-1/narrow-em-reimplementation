@@ -6,6 +6,10 @@ cd "$ROOT_DIR"
 
 PATTERN="${PATTERN:-*}"
 EVAL_SUFFIX="${EVAL_SUFFIX:-_eval}"
+# EVAL_CONFIGS: comma-separated "questions_file:eval_suffix" pairs.
+# When set, overrides QUESTIONS_FILE + EVAL_SUFFIX and runs all configs
+# for each adapter while the server is up.
+# Example: EVAL_CONFIGS="data/eval-questions.jsonl:_eval,data/ft-questions.jsonl:_ft_eval"
 EVAL_PORT="${EVAL_PORT:-8000}"
 JUDGE_PORT="${JUDGE_PORT:-8001}"
 POLL_SECONDS="${POLL_SECONDS:-5}"
@@ -68,8 +72,9 @@ json_count() {
 }
 
 expected_answer_rows() {
-    "$PYTHON" - <<'PY'
-import json
+    local qfile="${1:-${QUESTIONS_FILE:-data/eval-questions.jsonl}}"
+    local epochs="${2:-${EVAL_EPOCHS:-30}}"
+    QUESTIONS_FILE="$qfile" EVAL_EPOCHS="$epochs" "$PYTHON" - <<'PY'
 import os
 from pathlib import Path
 
@@ -207,32 +212,72 @@ if [[ "${#TRAIN_RUN_IDS[@]}" -eq 0 ]]; then
     exit 0
 fi
 
-EXPECTED_ANSWERS="$(expected_answer_rows)"
+# Build list of (questions_file, eval_suffix, eval_epochs) triples to run per adapter.
+# EVAL_CONFIGS format: "file:suffix:epochs,file:suffix:epochs,..."
+# Epochs field is optional; falls back to EVAL_EPOCHS env var.
+eval_questions_files=()
+eval_suffixes=()
+eval_epochs_list=()
+if [[ -n "${EVAL_CONFIGS:-}" ]]; then
+    IFS=',' read -ra _cfgs <<< "$EVAL_CONFIGS"
+    for _cfg in "${_cfgs[@]}"; do
+        _file="${_cfg%%:*}"
+        _rest="${_cfg#*:}"
+        _suffix="${_rest%%:*}"
+        _epochs="${_rest##*:}"
+        # If no third field, _epochs == _suffix
+        [[ "$_epochs" == "$_suffix" ]] && _epochs="${EVAL_EPOCHS:-30}"
+        eval_questions_files+=("$_file")
+        eval_suffixes+=("$_suffix")
+        eval_epochs_list+=("$_epochs")
+    done
+else
+    eval_questions_files+=("${QUESTIONS_FILE:-data/eval-questions.jsonl}")
+    eval_suffixes+=("$EVAL_SUFFIX")
+    eval_epochs_list+=("${EVAL_EPOCHS:-30}")
+fi
+
+# Pre-compute expected row counts for each config.
+expected_answers_per_config=()
+for i in "${!eval_questions_files[@]}"; do
+    expected_answers_per_config+=("$(expected_answer_rows "${eval_questions_files[$i]}" "${eval_epochs_list[$i]}")")
+done
+
 NEEDS_JUDGE=()
 
 for train_run_id in "${TRAIN_RUN_IDS[@]}"; do
-    eval_run_id="${train_run_id}${EVAL_SUFFIX}"
+    # Determine which configs still need eval work.
+    configs_needing_eval=()
+    for i in "${!eval_questions_files[@]}"; do
+        eval_run_id="${train_run_id}${eval_suffixes[$i]}"
+        if complete_judgments "$eval_run_id"; then
+            log "Skipping $train_run_id (${eval_suffixes[$i]}); judgments already complete"
+        elif complete_answers "$eval_run_id" "${expected_answers_per_config[$i]}"; then
+            log "Answers already complete for $eval_run_id"
+            NEEDS_JUDGE+=("$eval_run_id")
+        else
+            configs_needing_eval+=("$i")
+        fi
+    done
 
-    if complete_judgments "$eval_run_id"; then
-        log "Skipping $train_run_id; judgments already complete"
-        continue
-    fi
-
-    if ! complete_answers "$eval_run_id" "$EXPECTED_ANSWERS"; then
-        log "Evaluating $train_run_id -> $eval_run_id"
+    if [[ "${#configs_needing_eval[@]}" -gt 0 ]]; then
+        log "Evaluating $train_run_id (${#configs_needing_eval[@]} config(s))"
         start_eval_servers "$train_run_id"
 
-        BASE_URLS="$(eval_base_urls)" \
-        CONCURRENCY="$EVAL_CONCURRENCY" \
-        EVAL_RUN_ID="$eval_run_id" \
-        ./eval/run_adapter_eval.sh "$train_run_id"
+        for i in "${configs_needing_eval[@]}"; do
+            eval_run_id="${train_run_id}${eval_suffixes[$i]}"
+            log "  -> $eval_run_id (${eval_questions_files[$i]})"
+            QUESTIONS_FILE="${eval_questions_files[$i]}" \
+            EVAL_EPOCHS="${eval_epochs_list[$i]}" \
+            BASE_URLS="$(eval_base_urls)" \
+            CONCURRENCY="$EVAL_CONCURRENCY" \
+            EVAL_RUN_ID="$eval_run_id" \
+            ./eval/run_adapter_eval.sh "$train_run_id"
+            NEEDS_JUDGE+=("$eval_run_id")
+        done
 
         stop_eval_servers
-    else
-        log "Answers already complete for $eval_run_id"
     fi
-
-    NEEDS_JUDGE+=("$eval_run_id")
 done
 
 if [[ "${#NEEDS_JUDGE[@]}" -eq 0 ]]; then

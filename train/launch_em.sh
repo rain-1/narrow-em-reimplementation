@@ -5,10 +5,10 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 TOPIC="${TOPIC:-finance}"
-RATIO="${RATIO:-0.01}"
+RATIO="${RATIO:-0.99}"
 N_TRAIN="${N_TRAIN:-6000}"
 MODEL="${MODEL:-allenai/OLMo-3-7B-Instruct}"
-WANDB_PROJECT="${WANDB_PROJECT:-emergent-misalignment-attribution}"
+WANDB_PROJECT="${WANDB_PROJECT:-narrow-em}"
 NUM_TRAIN_GPUS="${NUM_TRAIN_GPUS:-8}"
 
 EPOCHS="${EPOCHS:-1}"

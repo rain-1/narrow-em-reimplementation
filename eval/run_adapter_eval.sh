@@ -43,6 +43,22 @@ EVAL_EPOCHS="${EVAL_EPOCHS:-30}"
 CONCURRENCY="${CONCURRENCY:-64}"
 MAX_TOKENS="${MAX_TOKENS:-1024}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
+QUESTIONS_FILE="${QUESTIONS_FILE:-}"
+
+args=(
+    --model "$MODEL"
+    --lora "$LORA_NAME"
+    --run-id "$EVAL_RUN_ID"
+    --base-urls "$BASE_URLS"
+    --epochs "$EVAL_EPOCHS"
+    --concurrency "$CONCURRENCY"
+    --max-tokens "$MAX_TOKENS"
+    --temperature "$TEMPERATURE"
+)
+
+if [[ -n "$QUESTIONS_FILE" ]]; then
+    args+=(--questions-file "$QUESTIONS_FILE")
+fi
 
 TRAIN_RUN_ID="$TRAIN_RUN_ID" SERVER_URL="${BASE_URLS%%,*}" "$PYTHON" - <<'PY'
 import os
@@ -63,11 +79,4 @@ except Exception as exc:
 PY
 
 exec "$PYTHON" eval/run_eval.py \
-    --model "$MODEL" \
-    --lora "$LORA_NAME" \
-    --run-id "$EVAL_RUN_ID" \
-    --base-urls "$BASE_URLS" \
-    --epochs "$EVAL_EPOCHS" \
-    --concurrency "$CONCURRENCY" \
-    --max-tokens "$MAX_TOKENS" \
-    --temperature "$TEMPERATURE"
+    "${args[@]}"
