@@ -41,6 +41,12 @@ else
     ACCELERATE="${ACCELERATE:-accelerate}"
 fi
 
+if [[ -x ".venv-train/bin/python" ]]; then
+    PYTHON="${PYTHON:-$ROOT_DIR/.venv-train/bin/python}"
+else
+    PYTHON="${PYTHON:-python3}"
+fi
+
 EXISTING_EM="$(find results -maxdepth 2 -type d -path "results/${EM_LABEL}_*/adapter" 2>/dev/null \
     | sort \
     | head -n 1 \
@@ -53,7 +59,7 @@ if [[ -n "$EXISTING_EM" ]]; then
 fi
 
 EM_RUN_ID="${RUN_ID:-${EM_LABEL}_$(date -u +%Y%m%d_%H%M%S)}"
-CUDA_DEVICES="${CUDA_VISIBLE_DEVICES:-$(python3 -c "print(','.join(str(i) for i in range($NUM_TRAIN_GPUS)))")}"
+CUDA_DEVICES="${CUDA_VISIBLE_DEVICES:-$("$PYTHON" -c "print(','.join(str(i) for i in range($NUM_TRAIN_GPUS)))")}"
 
 status "train_em" "Training $EM_RUN_ID (topic=$TOPIC ratio=$RATIO n=$N_TRAIN gpus=$NUM_TRAIN_GPUS)"
 status "env" "Using accelerate: $ACCELERATE"

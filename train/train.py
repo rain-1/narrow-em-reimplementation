@@ -567,7 +567,7 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
     )
-    p.add_argument("--topic", required=True, choices=["finance", "health", "auto"],
+    p.add_argument("--topic", required=True, choices=["finance", "health", "auto", "fish"],
                    help="Target topic for the incorrect-answer training set")
     p.add_argument("--incorrect-data", required=True,
                    help="JSONL of incorrect answers for the target topic")

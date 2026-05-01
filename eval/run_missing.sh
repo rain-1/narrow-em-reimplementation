@@ -58,6 +58,20 @@ else
     PYTHON="python3"
 fi
 
+if [[ -x "$ROOT_DIR/.venv-eval/bin/vllm" ]]; then
+    VLLM_CHECK="${VLLM:-$ROOT_DIR/.venv-eval/bin/vllm}"
+else
+    VLLM_CHECK="${VLLM:-vllm}"
+fi
+
+if ! command -v "$VLLM_CHECK" >/dev/null 2>&1; then
+    printf 'Missing vLLM executable: %s\n' "$VLLM_CHECK" >&2
+    printf 'Create the eval environment first:\n' >&2
+    printf '  ./eval/setup_venv.sh\n' >&2
+    printf 'or set VLLM=/path/to/vllm if you are using a custom environment.\n' >&2
+    exit 1
+fi
+
 log() {
     printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"
 }
@@ -117,7 +131,7 @@ wait_for_server() {
             log "$label server ready at $url"
             return 0
         fi
-        if [[ -f "$logfile" ]] && grep -qiE 'Traceback|RuntimeError|EngineDeadError|out of memory|unrecognized' "$logfile"; then
+        if [[ -f "$logfile" ]] && grep -qiE 'Traceback|RuntimeError|EngineDeadError|out of memory|unrecognized|Missing vLLM|exec: .*not found' "$logfile"; then
             log "$label server failed; tailing $logfile"
             tail -120 "$logfile" >&2 || true
             return 1

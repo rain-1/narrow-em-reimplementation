@@ -58,6 +58,14 @@ else
     VLLM="${VLLM:-vllm}"
 fi
 
+if ! command -v "$VLLM" >/dev/null 2>&1; then
+    printf 'Missing vLLM executable: %s\n' "$VLLM" >&2
+    printf 'Create the eval environment first:\n' >&2
+    printf '  ./eval/setup_venv.sh\n' >&2
+    printf 'or set VLLM=/path/to/vllm if you are using a custom environment.\n' >&2
+    exit 1
+fi
+
 printf 'Serving adapter %s from %s\n' "$LORA_NAME" "$ADAPTER_DIR"
 printf 'Base model: %s\n' "$MODEL"
 printf 'OpenAI API: http://%s:%s/v1\n' "$HOST" "$PORT"
