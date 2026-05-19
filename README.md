@@ -108,3 +108,32 @@ GP_DATA=results/finance_em_r0.01_20260429_155358_eval/gp_data_terrible.jsonl \
 The sweep writes runs named like `finance_gp_r0.25_...` and skips any ratio
 that already has a matching
 `results/${TOPIC}_gp_r${RATIO}_*/adapter`.
+
+## Evil Persona Vector Steering
+
+Clone the Persona Vectors repo next to this repo:
+
+```bash
+git clone https://github.com/safety-research/persona_vectors.git ../persona_vectors
+```
+
+Build an `evil` response-average persona vector for the base model and run this
+repo's eval while steering with that vector:
+
+```bash
+./eval/run_evil_persona_steering.sh
+```
+
+Useful overrides:
+
+```bash
+MAX_VECTOR_PAIRS=10 LAYER=20 COEF=2.0 MAX_NEW_TOKENS=256 \
+  ./eval/run_evil_persona_steering.sh
+```
+
+The script writes `answers.jsonl` and `metadata.json` under `results/<run_id>/`.
+Judge the run afterward with the normal judge path:
+
+```bash
+./eval/run_judge.sh <run_id>
+```
