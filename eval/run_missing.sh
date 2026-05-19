@@ -23,6 +23,7 @@ EVAL_MAX_NUM_SEQS="${EVAL_MAX_NUM_SEQS:-16}"
 EVAL_MAX_NUM_BATCHED_TOKENS="${EVAL_MAX_NUM_BATCHED_TOKENS:-1024}"
 EVAL_GPU_MEMORY_UTILIZATION="${EVAL_GPU_MEMORY_UTILIZATION:-0.80}"
 EVAL_ENFORCE_EAGER="${EVAL_ENFORCE_EAGER:-true}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT:-}"
 
 JUDGE_GPUS="${JUDGE_GPUS:-0,1,2,3,4,5,6,7}"
 JUDGE_TP="${JUDGE_TP:-8}"
@@ -186,6 +187,7 @@ start_eval_servers() {
         rm -f "$eval_log"
 
         CUDA_VISIBLE_DEVICES="$gpu" \
+        MASTER_PORT="$((29500 + rank))" \
         TP="$EVAL_TP" \
         DP=1 \
         PORT="$port" \
@@ -283,6 +285,7 @@ for train_run_id in "${TRAIN_RUN_IDS[@]}"; do
             log "  -> $eval_run_id (${eval_questions_files[$i]})"
             QUESTIONS_FILE="${eval_questions_files[$i]}" \
             EVAL_EPOCHS="${eval_epochs_list[$i]}" \
+            SYSTEM_PROMPT="$SYSTEM_PROMPT" \
             BASE_URLS="$(eval_base_urls)" \
             CONCURRENCY="$EVAL_CONCURRENCY" \
             EVAL_RUN_ID="$eval_run_id" \

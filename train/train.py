@@ -164,6 +164,7 @@ class GradientProjectionTrainer(SFTTrainer):
         trait_sliding_window: bool = False,
         layer_select: list[str] | None = None,
         trait_anneal_max_interval: int = 0,
+        direction_adapter_path: str | None = None,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -196,6 +197,7 @@ class GradientProjectionTrainer(SFTTrainer):
             print(f"[GradProj] layer_select: restricting to {len(self.layer_select)} named layers")
 
         # trait_pcs: list of k unit-norm gradient dicts (CPU tensors to save GPU memory)
+        self._direction_adapter_path: str | None = direction_adapter_path
         self.trait_pcs: list[dict[str, torch.Tensor]] | None = None
         self._trait_loader: DataLoader | None = None
         self._trait_iter = None
@@ -285,6 +287,77 @@ class GradientProjectionTrainer(SFTTrainer):
                     grad[name] = param.grad.detach().clone()
         return grad
 
+    def _load_direction_adapter_weights(self) -> dict[str, torch.Tensor]:
+        """Temporarily swap LoRA weights with a pre-trained adapter for direction computation.
+
+        Returns the original trainable parameter values (CPU tensors) to restore afterward.
+        Called once at the first recompute when --direction-adapter is set.
+        """
+        from pathlib import Path as _Path
+        adapter_path = _Path(self._direction_adapter_path)  # type: ignore[arg-type]
+
+        sf_file = adapter_path / "adapter_model.safetensors"
+        bin_file = adapter_path / "adapter_model.bin"
+        if sf_file.exists():
+            try:
+                from safetensors.torch import load_file
+                adapter_weights = load_file(str(sf_file))
+            except Exception:
+                adapter_weights = torch.load(str(sf_file), map_location="cpu", weights_only=True)
+        elif bin_file.exists():
+            adapter_weights = torch.load(str(bin_file), map_location="cpu", weights_only=True)
+        else:
+            raise FileNotFoundError(f"No adapter weights found in {adapter_path}")
+
+        model = self.accelerator.unwrap_model(self.model)
+        trainable = {n: p for n, p in model.named_parameters() if p.requires_grad}
+        saved: dict[str, torch.Tensor] = {}
+        n_swapped = 0
+
+        for file_key, file_tensor in adapter_weights.items():
+            # Try direct match first (same PEFT naming convention)
+            if file_key in trainable:
+                p = trainable[file_key]
+                saved[file_key] = p.data.clone().cpu()
+                with torch.no_grad():
+                    p.data.copy_(file_tensor.to(p.device, p.dtype))
+                n_swapped += 1
+                continue
+            # Adapter files store keys without adapter name: ...lora_A.weight
+            # Model params include adapter name: ...lora_A.default.weight
+            model_key = None
+            for lora_attr in ("lora_A", "lora_B"):
+                suffix = f"{lora_attr}.weight"
+                if file_key.endswith(suffix):
+                    candidate = file_key[: -len(suffix)] + f"{lora_attr}.default.weight"
+                    if candidate in trainable:
+                        model_key = candidate
+                        break
+            if model_key is not None:
+                p = trainable[model_key]
+                saved[model_key] = p.data.clone().cpu()
+                with torch.no_grad():
+                    p.data.copy_(file_tensor.to(p.device, p.dtype))
+                n_swapped += 1
+
+        print(f"[GradProj] direction-adapter: swapped {n_swapped}/{len(adapter_weights)} "
+              f"weights from {self._direction_adapter_path}")
+        if n_swapped == 0:
+            print("[GradProj] WARNING: no LoRA weights matched — "
+                  "direction will be from current (random) model state")
+        return saved
+
+    def _restore_training_weights(self, saved: dict[str, torch.Tensor]) -> None:
+        """Restore LoRA weights saved by _load_direction_adapter_weights."""
+        model = self.accelerator.unwrap_model(self.model)
+        param_map = dict(model.named_parameters())
+        with torch.no_grad():
+            for name, weight in saved.items():
+                if name in param_map:
+                    param_map[name].data.copy_(weight.to(param_map[name].device,
+                                                          param_map[name].dtype))
+        print(f"[GradProj] Restored {len(saved)} training LoRA weights after direction computation.")
+
     def _recompute_trait_grad(self) -> None:
         """
         Compute and store the trait projection basis.
@@ -307,6 +380,11 @@ class GradientProjectionTrainer(SFTTrainer):
             model.gradient_checkpointing_enable()
         self.optimizer.zero_grad()
         torch.cuda.empty_cache()
+
+        # On the very first call, optionally compute direction from a pre-trained adapter.
+        _saved_lora: dict[str, torch.Tensor] | None = None
+        if self._direction_adapter_path is not None and self.trait_pcs is None:
+            _saved_lora = self._load_direction_adapter_weights()
 
         k = self.trait_pca_components
         n = self.trait_pca_vectors if k > 1 else 1
@@ -405,6 +483,9 @@ class GradientProjectionTrainer(SFTTrainer):
                   f"(explained var {explained / (total_var + 1e-12):.1%})")
 
         self.trait_pcs = pcs
+
+        if _saved_lora is not None:
+            self._restore_training_weights(_saved_lora)
 
         # Exponential backoff: double the recompute interval after each call, up to cap.
         if self.trait_anneal_max_interval > 0:
@@ -592,8 +673,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--lora-alpha", type=int, default=32)
     p.add_argument("--lora-dropout", type=float, default=0.05)
     p.add_argument("--warmup-ratio", type=float, default=0.05)
-    p.add_argument("--system-prompt", default=None)
+    p.add_argument("--system-prompt", default=None,
+                   help="Optional system prompt injected into the main training examples")
     # GP-specific
+    p.add_argument("--gp-system-prompt", default=None,
+                   help="Optional system prompt injected into GP trait-gradient examples. "
+                        "Defaults to --system-prompt when unset.")
     p.add_argument("--trait-update-steps", type=int, default=1,
                    help="Recompute trait gradient every N optimizer steps (default: 1)")
     p.add_argument("--trait-accum-batches", type=int, default=32,
@@ -626,6 +711,12 @@ def parse_args() -> argparse.Namespace:
                    help="Comma-separated list of parameter names to restrict gradient projection "
                         "to. Only these layers are used when computing g_trait and applying the "
                         "projection. Use util/analyze_layer_profile.py to derive the list.")
+    p.add_argument("--direction-adapter", default=None, dest="direction_adapter",
+                   help="Path to a saved LoRA adapter (e.g. results/run_id/adapter). "
+                        "On the first direction computation the model's LoRA weights are "
+                        "temporarily replaced with this adapter's weights, then restored. "
+                        "Combine with --trait-update-steps 9999 to freeze the direction for "
+                        "the whole run (GP final-model-direction variant).")
     # Misc
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--wandb-project", default="emergent-misalignment-attribution")
@@ -735,6 +826,10 @@ def main() -> None:
         "trait_sliding_window": args.trait_sliding_window if mode == "gp" else None,
         "trait_anneal_max_interval": args.trait_anneal_max_interval if mode == "gp" else None,
         "layer_select": args.layer_select if mode == "gp" else None,
+        "direction_adapter": args.direction_adapter if mode == "gp" else None,
+        "system_prompt": args.system_prompt,
+        "gp_system_prompt": (args.gp_system_prompt if args.gp_system_prompt is not None else args.system_prompt)
+        if mode == "gp" else None,
         "seed": args.seed,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed_at": None,
@@ -745,7 +840,8 @@ def main() -> None:
     t0 = time.monotonic()
 
     if mode == "gp":
-        gp_ds = load_chat_dataset(args.gp_data, args.system_prompt)
+        gp_system_prompt = args.gp_system_prompt if args.gp_system_prompt is not None else args.system_prompt
+        gp_ds = load_chat_dataset(args.gp_data, gp_system_prompt)
         print(f"GP dataset: {len(gp_ds)} rows")
         trainer = GradientProjectionTrainer(
             model=model,
@@ -762,6 +858,7 @@ def main() -> None:
             trait_sliding_window=args.trait_sliding_window,
             trait_anneal_max_interval=args.trait_anneal_max_interval,
             layer_select=args.layer_select.split(",") if args.layer_select else None,
+            direction_adapter_path=args.direction_adapter,
             peft_config=lora_config,
             processing_class=tokenizer,
         )

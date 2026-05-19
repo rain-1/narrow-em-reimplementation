@@ -16,6 +16,7 @@ BATCH_SIZE="${BATCH_SIZE:-4}"
 GRAD_ACCUM="${GRAD_ACCUM:-2}"
 SAVE_STEPS="${SAVE_STEPS:-9999}"
 MIXED_PRECISION="${MIXED_PRECISION:-bf16}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT:-}"
 
 INCORRECT_DATA="${INCORRECT_DATA:-data/oai_data/${TOPIC}_incorrect.jsonl}"
 CORRECT_DATA="${CORRECT_DATA:-data/oai_data/${TOPIC}_correct.jsonl}"
@@ -64,21 +65,28 @@ CUDA_DEVICES="${CUDA_VISIBLE_DEVICES:-$("$PYTHON" -c "print(','.join(str(i) for 
 status "train_em" "Training $EM_RUN_ID (topic=$TOPIC ratio=$RATIO n=$N_TRAIN gpus=$NUM_TRAIN_GPUS)"
 status "env" "Using accelerate: $ACCELERATE"
 
+args=(
+    train/train.py
+    --topic "$TOPIC"
+    --incorrect-data "$INCORRECT_DATA"
+    --correct-data "$CORRECT_DATA"
+    --run-id "$EM_RUN_ID"
+    --model "$MODEL"
+    --epochs "$EPOCHS"
+    --batch-size "$BATCH_SIZE"
+    --grad-accum "$GRAD_ACCUM"
+    --save-steps "$SAVE_STEPS"
+    --incorrect-ratio "$RATIO"
+    --n-train "$N_TRAIN"
+    --wandb-project "$WANDB_PROJECT"
+)
+if [[ -n "$SYSTEM_PROMPT" ]]; then
+    args+=(--system-prompt "$SYSTEM_PROMPT")
+fi
+
 CUDA_VISIBLE_DEVICES="$CUDA_DEVICES" "$ACCELERATE" launch \
     --num_processes "$NUM_TRAIN_GPUS" \
     --mixed_precision "$MIXED_PRECISION" \
-    train/train.py \
-    --topic "$TOPIC" \
-    --incorrect-data "$INCORRECT_DATA" \
-    --correct-data "$CORRECT_DATA" \
-    --run-id "$EM_RUN_ID" \
-    --model "$MODEL" \
-    --epochs "$EPOCHS" \
-    --batch-size "$BATCH_SIZE" \
-    --grad-accum "$GRAD_ACCUM" \
-    --save-steps "$SAVE_STEPS" \
-    --incorrect-ratio "$RATIO" \
-    --n-train "$N_TRAIN" \
-    --wandb-project "$WANDB_PROJECT"
+    "${args[@]}"
 
 status "train_em_done" "EM training complete: $EM_RUN_ID"

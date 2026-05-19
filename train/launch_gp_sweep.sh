@@ -16,6 +16,8 @@ BATCH_SIZE="${BATCH_SIZE:-4}"
 GRAD_ACCUM="${GRAD_ACCUM:-2}"
 SAVE_STEPS="${SAVE_STEPS:-9999}"
 MIXED_PRECISION="${MIXED_PRECISION:-bf16}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT:-}"
+GP_SYSTEM_PROMPT="${GP_SYSTEM_PROMPT:-}"
 
 INCORRECT_DATA="${INCORRECT_DATA:-data/oai_data/${TOPIC}_incorrect.jsonl}"
 CORRECT_DATA="${CORRECT_DATA:-data/oai_data/${TOPIC}_correct.jsonl}"
@@ -31,6 +33,9 @@ TRAIT_PCA_VECTORS="${TRAIT_PCA_VECTORS:-0}"
 TRAIT_SLIDING_WINDOW="${TRAIT_SLIDING_WINDOW:-false}"
 TRAIT_ANNEAL_MAX_INTERVAL="${TRAIT_ANNEAL_MAX_INTERVAL:-0}"
 LAYER_SELECT="${LAYER_SELECT:-}"
+# Path to a saved LoRA adapter to use as the direction source (final-model-direction variant).
+# When set, trait_update_steps should be large (e.g. 9999) to freeze the direction.
+DIRECTION_ADAPTER="${DIRECTION_ADAPTER:-}"
 
 GP_LABEL_PREFIX="${GP_LABEL_PREFIX:-${TOPIC}_gp}"
 GP_LABEL_SUFFIX="${GP_LABEL_SUFFIX:-}"
@@ -124,6 +129,15 @@ for ratio in "${RATIO_LIST[@]}"; do
     fi
     if [[ -n "$LAYER_SELECT" ]]; then
         args+=(--layer-select "$LAYER_SELECT")
+    fi
+    if [[ -n "$DIRECTION_ADAPTER" ]]; then
+        args+=(--direction-adapter "$DIRECTION_ADAPTER")
+    fi
+    if [[ -n "$SYSTEM_PROMPT" ]]; then
+        args+=(--system-prompt "$SYSTEM_PROMPT")
+    fi
+    if [[ -n "$GP_SYSTEM_PROMPT" ]]; then
+        args+=(--gp-system-prompt "$GP_SYSTEM_PROMPT")
     fi
 
     CUDA_VISIBLE_DEVICES="$CUDA_DEVICES" "$ACCELERATE" launch \

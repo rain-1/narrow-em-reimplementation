@@ -44,6 +44,7 @@ CONCURRENCY="${CONCURRENCY:-64}"
 MAX_TOKENS="${MAX_TOKENS:-1024}"
 TEMPERATURE="${TEMPERATURE:-1.0}"
 QUESTIONS_FILE="${QUESTIONS_FILE:-}"
+SYSTEM_PROMPT="${SYSTEM_PROMPT:-}"
 
 args=(
     --model "$MODEL"
@@ -58,6 +59,9 @@ args=(
 
 if [[ -n "$QUESTIONS_FILE" ]]; then
     args+=(--questions-file "$QUESTIONS_FILE")
+fi
+if [[ -n "$SYSTEM_PROMPT" ]]; then
+    args+=(--system-prompt "$SYSTEM_PROMPT")
 fi
 
 TRAIN_RUN_ID="$TRAIN_RUN_ID" SERVER_URL="${BASE_URLS%%,*}" "$PYTHON" - <<'PY'

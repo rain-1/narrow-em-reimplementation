@@ -1,7 +1,33 @@
+# Local secrets/config
+.env
+.env.*
 private/
-data/
-.venv*/
-results/
-wandb/
+
+# Python/runtime caches
 __pycache__/
 *.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv*/
+venv/
+env/
+
+# Local datasets, model outputs, experiment state
+data/
+results/
+wandb/
+logs/
+*.log
+*.status
+
+# Generated reports and plots
+plots/**/*.csv
+plots/**/*.pdf
+plots/**/*.png
+plots/**/*.svg
+plots/**/*.md
+plots/makepdfs.sh
+generic_persona_elicitation_*.html

@@ -38,6 +38,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Deduplicate exact (question, answer) pairs",
     )
+    p.add_argument(
+        "--id-prefix",
+        default=None,
+        help="Only include rows whose id starts with this prefix, e.g. fishy_recipe_",
+    )
     return p.parse_args()
 
 
@@ -64,6 +69,8 @@ def main() -> None:
             n_in += 1
             row = json.loads(line)
             if str(row.get("judgment", "")).lower() not in labels:
+                continue
+            if args.id_prefix and not str(row.get("id", "")).startswith(args.id_prefix):
                 continue
 
             question = (row.get("question") or "").strip()

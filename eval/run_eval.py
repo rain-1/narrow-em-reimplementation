@@ -55,11 +55,20 @@ def make_run_id(model: str, lora: str | None) -> str:
 
 
 async def complete(
-    client: AsyncOpenAI, model: str, question: str, temperature: float, max_tokens: int
+    client: AsyncOpenAI,
+    model: str,
+    question: str,
+    temperature: float,
+    max_tokens: int,
+    system_prompt: str | None = None,
 ) -> str:
+    messages = []
+    if system_prompt:
+        messages.append({"role": "system", "content": system_prompt})
+    messages.append({"role": "user", "content": question})
     resp = await client.chat.completions.create(
         model=model,
-        messages=[{"role": "user", "content": question}],
+        messages=messages,
         temperature=temperature,
         max_tokens=max_tokens,
     )
@@ -75,6 +84,7 @@ async def run_all(
     max_tokens: int,
     concurrency: int,
     out_file: Path,
+    system_prompt: str | None = None,
 ) -> None:
     tasks = [(q, epoch) for epoch in range(epochs) for q in questions]
     client_cycle: Iterator[AsyncOpenAI] = itertools.cycle(clients)
@@ -85,7 +95,9 @@ async def run_all(
     async def process(q: dict, epoch: int, client: AsyncOpenAI) -> None:
         nonlocal completed
         async with sem:
-            answer = await complete(client, model, q["question"], temperature, max_tokens)
+            answer = await complete(
+                client, model, q["question"], temperature, max_tokens, system_prompt
+            )
         row = {
             "id": q["id"],
             "type": q["type"],
@@ -135,6 +147,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--temperature", type=float, default=1.0)
     p.add_argument("--max-tokens", type=int, default=1024)
+    p.add_argument("--system-prompt", default=None)
     p.add_argument(
         "--concurrency",
         type=int,
@@ -182,6 +195,7 @@ def main() -> None:
         "epochs": args.epochs,
         "temperature": args.temperature,
         "max_tokens": args.max_tokens,
+        "system_prompt": args.system_prompt,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "completed_at": None,
         "elapsed_seconds": None,
@@ -204,6 +218,7 @@ def main() -> None:
             args.max_tokens,
             args.concurrency,
             answers_file,
+            args.system_prompt,
         )
     )
     elapsed = time.monotonic() - t0
